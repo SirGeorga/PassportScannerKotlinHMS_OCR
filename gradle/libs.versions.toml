@@ -1,7 +1,10 @@
 [versions]
 agcp = "1.9.1.302"
-agp = "8.6.0"
-gradle = "4.0.2"
+agp = "8.5.2"
+cameraCamera2Version = "1.2.0"
+cameraLifecycle = "1.2.0"
+cameraView = "1.2.0"
+gradle = "8.5.2"
 huaweiMlComputerVisionOcr = "3.11.0.301"
 kotlin = "1.9.0"
 coreKtx = "1.15.0"
@@ -19,8 +22,13 @@ cameraCamera2 = "1.4.0"
 [libraries]
 agcp = { module = "com.huawei.agconnect:agcp", version.ref = "agcp" }
 androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "cameraCamera2" }
+androidx-camera-camera2-v120 = { module = "androidx.camera:camera-camera2", version.ref = "cameraCamera2Version" }
+androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "cameraCamera2" }
+androidx-camera-extensions = { module = "androidx.camera:camera-extensions", version.ref = "cameraCamera2" }
 androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "cameraCamera2" }
+androidx-camera-lifecycle-v120 = { module = "androidx.camera:camera-lifecycle", version.ref = "cameraLifecycle" }
 androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "cameraCamera2" }
+androidx-camera-view-v120 = { module = "androidx.camera:camera-view", version.ref = "cameraView" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 gradle = { module = "com.android.tools.build:gradle", version.ref = "gradle" }
 huawei-ml-computer-vision-ocr = { module = "com.huawei.hms:ml-computer-vision-ocr", version.ref = "huaweiMlComputerVisionOcr" }

@@ -1,57 +1,61 @@
 package com.example.passportrecognizer
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
-import android.provider.MediaStore
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import com.example.passportrecognizer.databinding.ActivityMainBinding
 import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.googlecode.tesseract.android.TessBaseAPI
 import com.huawei.hms.mlsdk.MLAnalyzerFactory
 import com.huawei.hms.mlsdk.common.MLFrame
 import com.huawei.hms.mlsdk.text.MLLocalTextSetting
 import com.huawei.hms.mlsdk.text.MLTextAnalyzer
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding // Referencia para el binding de la vista
     private var imageUri: Uri? = null // URI de la imagen capturada o seleccionada
     private lateinit var imagePickerLauncher: ActivityResultLauncher<String> // Lanzador para la selección de imágenes
-    private lateinit var cameraCaptureLauncher: ActivityResultLauncher<Uri> // Lanzador para la captura de fotos
-    private val tessBaseAPI = TessBaseAPI()
+
+    //private lateinit var cameraCaptureLauncher: ActivityResultLauncher<Uri> // Lanzador para la captura de fotos
+    //private val tessBaseAPI = TessBaseAPI()
     private lateinit var analyzer: MLTextAnalyzer
+    private lateinit var imageCapture: ImageCapture
+    private lateinit var cameraExecutor: ExecutorService
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater) // Infla el layout con ViewBinding
         setContentView(binding.root) // Establece el contenido de la vista
         initializeImagePickerLauncher() // Inicializa el lanzador de selección de imágenes
-        initializeCameraCaptureLauncher() // Inicializa el lanzador de captura de cámara
+        //initializeCameraCaptureLauncher() // Inicializa el lanzador de captura de cámara
         setupReadTextButtonListener() // Configura el listener del botón para leer texto
         setupCaptureImageButtonListener() // Configura el listener del botón para capturar imágenes
         setupShareButtonListener() //Configura el listener del botón para compartir texto
+
+        cameraExecutor = Executors.newSingleThreadExecutor()
 
         val setting = MLLocalTextSetting.Factory()
             .setOCRMode(MLLocalTextSetting.OCR_DETECT_MODE) // Set languages that can be recognized.
@@ -59,6 +63,7 @@ class MainActivity : AppCompatActivity() {
             .create()
         analyzer = MLAnalyzerFactory.getInstance().getLocalTextAnalyzer(setting)
     }
+
     override fun onDestroy() {
         super.onDestroy()
         try {
@@ -66,38 +71,96 @@ class MainActivity : AppCompatActivity() {
                 analyzer.stop()
             }
         } catch (e: IOException) {
-            // Exception handling.
+            Log.e("MainActivity", "Error stopping analyzer", e)
         }
     }
 
-/*
-    // Inicia el proceso de reconocimiento de texto en la imagen
-    private fun recognizeTextFromImage1(uri: Uri) {
-        val recognizer = TextRecognition.getClient(
-            TextRecognizerOptions.DEFAULT_OPTIONS
-        )
-        val image = InputImage.fromFilePath(this, uri)
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
-        recognizer.process(image)
-            .addOnSuccessListener { visionText ->
-                // Проверяем результаты построчно для лучшей отладки
-                val stringBuilder = StringBuilder()
-                for (block in visionText.textBlocks) {
-                    for (line in block.lines) {
-                        stringBuilder.append(line.text).append("\n")
-                        // Логируем каждую распознанную строку для отладки
-                        Log.d("TextRecognition", "Распознанная строка: ${line.text}")
-                        // Логируем значение confidence если доступно
-                        Log.d("TextRecognition", "Confidence: ${line.confidence}")
-                    }
-                    stringBuilder.append("\n")
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+
+            val preview = Preview.Builder()
+                .build()
+                .also {
+                    it.setSurfaceProvider(binding.viewFinder.surfaceProvider)
                 }
-                displayRecognizedText(visionText.text) // Muestra el texto reconocido
+
+            imageCapture = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
+
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    this,
+                    cameraSelector,
+                    preview,
+                    imageCapture
+                )
+            } catch (exc: Exception) {
+                Log.e("CameraX", "Use case binding failed", exc)
             }
-            .addOnFailureListener { e ->
-                handleTextRecognitionError(e) // Maneja el error en el reconocimiento de texto
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun checkCameraPermissionAndTakePhoto() {
+        // Сначала проверяем разрешения
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            // Если PreviewView еще не активен, запускаем камеру
+            if (binding.viewFinder.visibility != View.VISIBLE) {
+                binding.viewFinder.visibility = View.VISIBLE
+                binding.imageViewId.visibility = View.GONE
+                startCamera()
+            } else {
+                // Если камера уже запущена, делаем снимок
+                takePhoto()
             }
-    }*/
+        } else {
+            // Запрашиваем разрешения если их нет
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.CAMERA),
+                CAMERA_PERMISSION_REQUEST_CODE
+            )
+        }
+    }
+
+    private fun takePhoto() {
+        val photoFile = createImageFile()
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+        imageCapture.takePicture(
+            outputOptions,
+            ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    val savedUri = Uri.fromFile(photoFile)
+                    imageUri = savedUri
+                    binding.imageViewId.setImageURI(savedUri)
+                    recognizeTextFromImage(savedUri)
+                    val msg = "Photo capture succeeded: ${output.savedUri}"
+                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+                    Log.d("CameraX", msg)
+                }
+
+                override fun onError(exc: ImageCaptureException) {
+                    Log.e("CameraX", "Photo capture failed: ${exc.message}", exc)
+                }
+            }
+        )
+        // Показать захваченное изображение
+        binding.viewFinder.visibility = View.GONE
+        binding.imageViewId.visibility = View.VISIBLE
+    }
+
 
     private fun recognizeTextFromImage(uri: Uri) {
         val image = InputImage.fromFilePath(this, uri)
@@ -121,18 +184,9 @@ class MainActivity : AppCompatActivity() {
         }
             .addOnFailureListener { e ->
                 handleTextRecognitionError(e)
-        }
+            }
     }
 
-    private fun uriToBitmap(uri: Uri): Bitmap? {
-        return try {
-            val inputStream = contentResolver.openInputStream(uri)
-            BitmapFactory.decodeStream(inputStream)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
 
     // Inicializa el lanzador para seleccionar imágenes desde el almacenamiento del dispositivo
     private fun initializeImagePickerLauncher() {
@@ -142,6 +196,7 @@ class MainActivity : AppCompatActivity() {
             }
     }
 
+    /*
     // Inicializa el lanzador para capturar imágenes con la cámara
     private fun initializeCameraCaptureLauncher() {
         cameraCaptureLauncher =
@@ -156,7 +211,7 @@ class MainActivity : AppCompatActivity() {
 
                 }
             }
-    }
+    }*/
 
     // Configura el listener para el botón de lectura de texto
     private fun setupReadTextButtonListener() {
@@ -165,12 +220,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setupCaptureImageButtonListener() {
+        binding.captureImageButtonId.setOnClickListener {
+            checkCameraPermissionAndTakePhoto() // Call new method for CameraX capture
+        }
+    }
+
+    /*
     // Configura el listener para el botón de captura de imagen
     private fun setupCaptureImageButtonListener() {
         binding.captureImageButtonId.setOnClickListener {
             checkCameraPermissionAndLaunchCamera() // Verifica permisos y lanza la cámara
         }
     }
+
+     */
 
     // Configura el listener para el boton de compartir texto
     private fun setupShareButtonListener() {
@@ -192,6 +256,24 @@ class MainActivity : AppCompatActivity() {
         startActivity(shareIntent)
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                binding.viewFinder.visibility = View.VISIBLE
+                binding.imageViewId.visibility = View.GONE
+                startCamera()
+            } else {
+                showToast("Camera permission is required to use this feature.")
+            }
+        }
+    }
+
+    /*
     // Verifica el permiso de cámara y, si está concedido, lanza la cámara; de lo contrario, solicita el permiso
     private fun checkCameraPermissionAndLaunchCamera() {
         if (ContextCompat.checkSelfPermission(
@@ -209,6 +291,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
     // Maneja el resultado de la solicitud de permisos
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -225,11 +308,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun takePhoto() {
+        val photoFile = createImageFile()
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+        imageCapture.takePicture(
+            outputOptions,
+            ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                    imageUri = Uri.fromFile(photoFile)
+                    recognizeTextFromImage(imageUri!!)  // Pass image URI for OCR
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    showToast("Failed to capture image: ${exception.message}")
+                    Log.e("CameraX", "Photo capture failed", exception)
+                }
+            })
+    }
+    */
+
+
     // Lanza el selector de imágenes
     private fun launchImagePicker() {
         imagePickerLauncher.launch("image/*")
     }
 
+    /*
     // Crea una intención para capturar una imagen y lanza la cámara
     private fun launchCamera() {
         val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
@@ -250,6 +356,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+     */
 
     // Crea un archivo de imagen en el almacenamiento externo privado
     @Throws(IOException::class)

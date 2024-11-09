@@ -62,4 +62,10 @@ dependencies {
     implementation (libs.huawei.ml.computer.vision.ocr)
     // Import the Latin-based language model package.
     implementation (libs.ml.computer.vision.ocr.latin.model)
+
+    implementation (libs.androidx.camera.core)
+    implementation (libs.androidx.camera.camera2.v120)
+    implementation (libs.androidx.camera.lifecycle.v120)
+    implementation (libs.androidx.camera.view.v120)
+    implementation (libs.androidx.camera.extensions)
 }

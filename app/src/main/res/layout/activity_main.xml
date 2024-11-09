@@ -6,23 +6,38 @@
     android:padding="24dp"
     android:background="@color/design_default_color_background">
 
-    <!-- ImageView en la parte superior del RelativeLayout -->
-    <ImageView
-        android:id="@+id/imageViewId"
+    <!-- FrameLayout для содержания PreviewView и ImageView -->
+    <FrameLayout
+        android:id="@+id/imageContainer"
         android:layout_width="match_parent"
         android:layout_height="300dp"
-        android:contentDescription="Изображение для сканирования"
-        android:scaleType="centerCrop"
-        android:background="@drawable/imageview_background"
         android:layout_alignParentTop="true"
-        android:layout_marginBottom="16dp" />
+        android:layout_marginBottom="16dp">
 
-    <!-- ScrollView para el texto, colocado debajo de ImageView y encima de los botones -->
+        <!-- PreviewView для предпросмотра камеры -->
+        <androidx.camera.view.PreviewView
+            android:id="@+id/viewFinder"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <!-- ImageView для отображения захваченного изображения -->
+        <ImageView
+            android:id="@+id/imageViewId"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="Изображение для сканирования"
+            android:scaleType="centerCrop"
+            android:background="@drawable/imageview_background" />
+
+    </FrameLayout>
+
+    <!-- ScrollView для текста, расположенный под контейнером изображения и над кнопками -->
     <ScrollView
         android:id="@+id/scrollViewResultText"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/imageViewId"
+        android:layout_below="@id/imageContainer"
         android:layout_above="@+id/buttonContainer"
         android:padding="8dp"
         android:background="@drawable/scrollview_background">
@@ -34,10 +49,9 @@
             android:text="Здесь будет отображаться результат распознавания"
             android:textAlignment="center"
             android:textColor="@android:color/black" />
-
     </ScrollView>
 
-    <!-- Contenedor LinearLayout para los tres botones -->
+    <!-- Контейнер LinearLayout для трёх кнопок -->
     <LinearLayout
         android:id="@+id/buttonContainer"
         android:layout_width="match_parent"
@@ -88,7 +102,5 @@
             app:cornerRadius="28dp"
             app:backgroundTint="@color/cardview_dark_background"
             android:textColor="@android:color/white" />
-
     </LinearLayout>
-
 </RelativeLayout>

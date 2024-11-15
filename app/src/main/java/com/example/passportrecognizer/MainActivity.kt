@@ -1,64 +1,68 @@
 package com.example.passportrecognizer
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
-import android.provider.MediaStore
 import android.util.Log
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import com.example.passportrecognizer.databinding.ActivityMainBinding
 import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.googlecode.tesseract.android.TessBaseAPI
 import com.huawei.hms.mlsdk.MLAnalyzerFactory
 import com.huawei.hms.mlsdk.common.MLFrame
 import com.huawei.hms.mlsdk.text.MLLocalTextSetting
 import com.huawei.hms.mlsdk.text.MLTextAnalyzer
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding // Referencia para el binding de la vista
     private var imageUri: Uri? = null // URI de la imagen capturada o seleccionada
     private lateinit var imagePickerLauncher: ActivityResultLauncher<String> // Lanzador para la selección de imágenes
-    private lateinit var cameraCaptureLauncher: ActivityResultLauncher<Uri> // Lanzador para la captura de fotos
-    private val tessBaseAPI = TessBaseAPI()
+
     private lateinit var analyzer: MLTextAnalyzer
+    private lateinit var imageCapture: ImageCapture
+    private lateinit var cameraExecutor: ExecutorService
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater) // Infla el layout con ViewBinding
         setContentView(binding.root) // Establece el contenido de la vista
         initializeImagePickerLauncher() // Inicializa el lanzador de selección de imágenes
-        initializeCameraCaptureLauncher() // Inicializa el lanzador de captura de cámara
         setupReadTextButtonListener() // Configura el listener del botón para leer texto
         setupCaptureImageButtonListener() // Configura el listener del botón para capturar imágenes
         setupShareButtonListener() //Configura el listener del botón para compartir texto
 
+        cameraExecutor = Executors.newSingleThreadExecutor()
+
         val setting = MLLocalTextSetting.Factory()
             .setOCRMode(MLLocalTextSetting.OCR_DETECT_MODE) // Set languages that can be recognized.
-            .setLanguage("ru")
-            .create()
+            .setLanguage("ru").create()
         analyzer = MLAnalyzerFactory.getInstance().getLocalTextAnalyzer(setting)
     }
+
     override fun onDestroy() {
         super.onDestroy()
         try {
@@ -66,38 +70,201 @@ class MainActivity : AppCompatActivity() {
                 analyzer.stop()
             }
         } catch (e: IOException) {
-            // Exception handling.
+            Log.e("MainActivity", "Error stopping analyzer", e)
         }
     }
 
-/*
-    // Inicia el proceso de reconocimiento de texto en la imagen
-    private fun recognizeTextFromImage1(uri: Uri) {
-        val recognizer = TextRecognition.getClient(
-            TextRecognizerOptions.DEFAULT_OPTIONS
-        )
-        val image = InputImage.fromFilePath(this, uri)
+    private fun startCamera() {
+        binding.guideOverlay.visibility = View.VISIBLE
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
 
-        recognizer.process(image)
-            .addOnSuccessListener { visionText ->
-                // Проверяем результаты построчно для лучшей отладки
-                val stringBuilder = StringBuilder()
-                for (block in visionText.textBlocks) {
-                    for (line in block.lines) {
-                        stringBuilder.append(line.text).append("\n")
-                        // Логируем каждую распознанную строку для отладки
-                        Log.d("TextRecognition", "Распознанная строка: ${line.text}")
-                        // Логируем значение confidence если доступно
-                        Log.d("TextRecognition", "Confidence: ${line.confidence}")
-                    }
-                    stringBuilder.append("\n")
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(binding.viewFinder.surfaceProvider)
+            }
+
+            imageCapture =
+                ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .build()
+
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
+                    this, cameraSelector, preview, imageCapture
+                )
+            } catch (exc: Exception) {
+                Log.e("CameraX", "Use case binding failed", exc)
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun checkCameraPermissionAndTakePhoto() {
+        // Сначала проверяем разрешения
+        if (ContextCompat.checkSelfPermission(
+                this, Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            // Если PreviewView еще не активен, запускаем камеру
+            if (binding.viewFinder.visibility != View.VISIBLE) {
+                binding.viewFinder.visibility = View.VISIBLE
+                binding.imageViewId.visibility = View.GONE
+                startCamera()
+            } else {
+                // Если камера уже запущена, делаем снимок
+                takePhoto()
+            }
+        } else {
+            // Запрашиваем разрешения если их нет
+            ActivityCompat.requestPermissions(
+                this, arrayOf(Manifest.permission.CAMERA), CAMERA_PERMISSION_REQUEST_CODE
+            )
+        }
+    }
+
+    private fun takePhoto() {
+        val photoFile = createImageFile()
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+        imageCapture.takePicture(
+            outputOptions,
+            ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    val savedUri = Uri.fromFile(photoFile)
+                    imageUri = savedUri
+
+                    // Load the bitmap from the file and apply correct orientation
+                    val originalBitmap = BitmapFactory.decodeFile(photoFile.absolutePath)
+                    val rotatedBitmap = adjustBitmapRotation(originalBitmap, savedUri)
+
+                    // Crop the rotated bitmap to the overlay area
+                    val croppedBitmap = cropToOverlayArea(rotatedBitmap)
+
+                    // Display the cropped image in imageViewId
+                    binding.imageViewId.setImageBitmap(croppedBitmap)
+
+                    // Pass the cropped bitmap to OCR
+                    recognizeTextFromBitmap(croppedBitmap)
                 }
-                displayRecognizedText(visionText.text) // Muestra el texto reconocido
+
+                override fun onError(exc: ImageCaptureException) {
+                    Log.e("CameraX", "Photo capture failed: ${exc.message}", exc)
+                }
             }
-            .addOnFailureListener { e ->
-                handleTextRecognitionError(e) // Maneja el error en el reconocimiento de texto
-            }
-    }*/
+        )
+
+        binding.viewFinder.visibility = View.GONE
+        binding.imageViewId.visibility = View.VISIBLE
+    }
+
+    fun getLocationInView(targetView: View, parentView: View): IntArray {
+        val targetLocation = IntArray(2)
+        val parentLocation = IntArray(2)
+
+        targetView.getLocationOnScreen(targetLocation)
+        parentView.getLocationOnScreen(parentLocation)
+
+        val relativeX = targetLocation[0] - parentLocation[0]
+        val relativeY = targetLocation[1] - parentLocation[1]
+
+        return intArrayOf(relativeX, relativeY)
+    }
+
+    private fun getOverlayCoordinates(): Rect {
+        // Get the overlay's location on screen
+        //val location = IntArray(2)
+        //binding.guideOverlay.getLocationInSurface(location)
+        val overlayCoords = getLocationInView(binding.guideOverlay, binding.viewFinder)
+        // Convert the position and size of the overlay to the coordinates in the captured image
+        val overlayX = overlayCoords[0]
+        val overlayY = overlayCoords[1]
+        //val overlayX = location[0]
+        //val overlayY = location[1]
+        val overlayWidth = binding.guideOverlay.width
+        val overlayHeight = binding.guideOverlay.height
+
+        return Rect(overlayX, overlayY, overlayX + overlayWidth, overlayY + overlayHeight)
+    }
+
+    private fun cropToOverlayArea(bitmap: Bitmap): Bitmap {
+        val overlayRect = getOverlayCoordinates()
+
+        // Calculate preview and image aspect ratios
+        val previewAspectRatio = binding.viewFinder.width.toFloat() / binding.viewFinder.height
+        val imageAspectRatio = bitmap.width.toFloat() / bitmap.height
+
+        // Determine scale and offset to map overlay to bitmap dimensions
+        val scaleX: Float
+        val scaleY: Float
+        var offsetX = 0
+        var offsetY = 0
+
+        if (previewAspectRatio > imageAspectRatio) {
+            scaleX = bitmap.width.toFloat() / binding.viewFinder.width
+            scaleY = scaleX
+            offsetY = ((binding.viewFinder.height * scaleY - bitmap.height) / 2).toInt()
+        } else {
+            scaleY = bitmap.height.toFloat() / binding.viewFinder.height
+            scaleX = scaleY
+            offsetX = ((binding.viewFinder.width * scaleX - bitmap.width) / 2).toInt()
+        }
+
+        // Apply scale and offset to overlay coordinates
+        val left = (overlayRect.left * scaleX - offsetX).toInt()
+        val top = (overlayRect.top * scaleY - offsetY).toInt()
+        val right = (overlayRect.right * scaleX - offsetX).toInt()
+        val bottom = (overlayRect.bottom * scaleY - offsetY).toInt()
+
+        Log.d("DebugScaled", "Scaled coordinates for cropping - Left: $left, Top: $top, Right: $right, Bottom: $bottom")
+
+        // Ensure coordinates are within bounds
+        val safeLeft = left.coerceAtLeast(0)
+        val safeTop = top.coerceAtLeast(0)
+        val safeRight = right.coerceAtMost(bitmap.width)
+        val safeBottom = bottom.coerceAtMost(bitmap.height)
+
+        // Crop the bitmap to the overlay area
+        return Bitmap.createBitmap(bitmap, safeLeft, safeTop, safeRight - safeLeft, safeBottom - safeTop)
+    }
+
+    private fun adjustBitmapRotation(bitmap: Bitmap, uri: Uri): Bitmap {
+        val exif = contentResolver.openInputStream(uri)?.use { inputStream ->
+            androidx.exifinterface.media.ExifInterface(inputStream)
+        }
+        val rotationDegrees = when (exif?.getAttributeInt(
+            androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION,
+            androidx.exifinterface.media.ExifInterface.ORIENTATION_NORMAL
+        )) {
+            androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
+            androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
+            androidx.exifinterface.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
+            else -> 0
+        }
+
+        return if (rotationDegrees != 0) {
+            val matrix = android.graphics.Matrix().apply { postRotate(rotationDegrees.toFloat()) }
+            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        } else {
+            bitmap
+        }
+    }
+
+    private fun recognizeTextFromBitmap(bitmap: Bitmap) {
+        val image = InputImage.fromBitmap(bitmap, 0)
+
+        // Process the bitmap with your OCR analyzer
+        val frame = MLFrame.fromBitmap(bitmap)
+        val task = analyzer.asyncAnalyseFrame(frame)
+
+        task.addOnSuccessListener { result ->
+            displayRecognizedText(result.stringValue)
+        }.addOnFailureListener { e ->
+            handleTextRecognitionError(e)
+        }
+    }
 
     private fun recognizeTextFromImage(uri: Uri) {
         val image = InputImage.fromFilePath(this, uri)
@@ -118,43 +285,17 @@ class MainActivity : AppCompatActivity() {
                 stringBuilder.append("\n")
             }
             displayRecognizedText(task.result.stringValue)
-        }
-            .addOnFailureListener { e ->
-                handleTextRecognitionError(e)
+        }.addOnFailureListener { e ->
+            handleTextRecognitionError(e)
         }
     }
 
-    private fun uriToBitmap(uri: Uri): Bitmap? {
-        return try {
-            val inputStream = contentResolver.openInputStream(uri)
-            BitmapFactory.decodeStream(inputStream)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
 
     // Inicializa el lanzador para seleccionar imágenes desde el almacenamiento del dispositivo
     private fun initializeImagePickerLauncher() {
         imagePickerLauncher =
             registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
                 handleImagePickerResult(uri)
-            }
-    }
-
-    // Inicializa el lanzador para capturar imágenes con la cámara
-    private fun initializeCameraCaptureLauncher() {
-        cameraCaptureLauncher =
-            registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-                if (success) {
-                    imageUri?.let { uri ->
-                        binding.imageViewId.setImageURI(uri) // Muestra la imagen capturada
-                        recognizeTextFromImage(uri) // Inicia el reconocimiento de texto en la imagen
-                    }
-                } else {
-                    showToast("Image capture failed. Please try again.") // Muestra error si la captura falla
-
-                }
             }
     }
 
@@ -165,10 +306,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Configura el listener para el botón de captura de imagen
     private fun setupCaptureImageButtonListener() {
         binding.captureImageButtonId.setOnClickListener {
-            checkCameraPermissionAndLaunchCamera() // Verifica permisos y lanza la cámara
+            checkCameraPermissionAndTakePhoto() // Call new method for CameraX capture
         }
     }
 
@@ -192,35 +332,17 @@ class MainActivity : AppCompatActivity() {
         startActivity(shareIntent)
     }
 
-    // Verifica el permiso de cámara y, si está concedido, lanza la cámara; de lo contrario, solicita el permiso
-    private fun checkCameraPermissionAndLaunchCamera() {
-        if (ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.CAMERA
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.CAMERA),
-                CAMERA_PERMISSION_REQUEST_CODE
-            )
-        } else {
-            launchCamera() // Lanza la cámara si el permiso ya está concedido
-        }
-    }
-
-    // Maneja el resultado de la solicitud de permisos
     override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                launchCamera() // Lanza la cámara si el permiso es concedido
+                binding.viewFinder.visibility = View.VISIBLE
+                binding.imageViewId.visibility = View.GONE
+                startCamera()
             } else {
-                showToast("Camera permission is required to use this feature.") // Muestra error si el permiso es denegado
+                showToast("Camera permission is required to use this feature.")
             }
         }
     }
@@ -230,27 +352,6 @@ class MainActivity : AppCompatActivity() {
         imagePickerLauncher.launch("image/*")
     }
 
-    // Crea una intención para capturar una imagen y lanza la cámara
-    private fun launchCamera() {
-        val intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-        intent.resolveActivity(packageManager)?.also {
-            val photoFile: File? = try {
-                createImageFile() // Crea un archivo para guardar la imagen
-            } catch (ex: IOException) {
-                null // Maneja la excepción si la creación del archivo falla
-            }
-            photoFile?.also {
-                val photoURI: Uri = FileProvider.getUriForFile(
-                    this,
-                    "${applicationContext.packageName}.provider",
-                    it
-                )
-                imageUri = photoURI
-                cameraCaptureLauncher.launch(photoURI) // Lanza la cámara con el URI del archivo
-            }
-        }
-    }
-
     // Crea un archivo de imagen en el almacenamiento externo privado
     @Throws(IOException::class)
     private fun createImageFile(): File {
@@ -258,9 +359,7 @@ class MainActivity : AppCompatActivity() {
             SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
         val storageDir: File? = getExternalFilesDir(Environment.DIRECTORY_PICTURES)
         return File.createTempFile(
-            "JPEG_${timeStamp}_",
-            ".jpg",
-            storageDir
+            "JPEG_${timeStamp}_", ".jpg", storageDir
         ).apply {
             imageUri = Uri.fromFile(this) // Guarda el URI del archivo creado
         }

@@ -56,8 +56,6 @@ dependencies {
     implementation (libs.androidx.camera.lifecycle)
     implementation (libs.androidx.camera.view)
 
-    implementation (libs.tess.two)
-
     // Import the base SDK.
     implementation (libs.huawei.ml.computer.vision.ocr)
     // Import the Latin-based language model package.

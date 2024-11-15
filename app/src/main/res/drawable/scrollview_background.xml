@@ -1,6 +1,6 @@
 <!-- Example for imageview_background.xml -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@android:color/white"/>
+    <solid android:color="@android:color/holo_green_light"/>
     <corners android:radius="16dp"/>
 </shape>
 

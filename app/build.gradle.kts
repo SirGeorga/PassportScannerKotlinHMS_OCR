@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    id ("kotlin-kapt")
 }
 
 android {
@@ -45,6 +46,7 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
+    implementation(libs.androidx.navigation.fragment.ktx)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -60,4 +62,16 @@ dependencies {
     implementation (libs.huawei.ml.computer.vision.ocr)
     // Import the Latin-based language model package.
     implementation (libs.ml.computer.vision.ocr.latin.model)
+
+    implementation(libs.okhttp)
+
+    implementation(libs.gson)
+
+    implementation (libs.androidx.navigation.fragment.ktx)
+    implementation (libs.androidx.navigation.ui.ktx)
+    implementation (libs.androidx.fragment.ktx)
+
+    implementation (libs.play.services.mlkit.document.scanner)
+
+    implementation (libs.glide)
 }

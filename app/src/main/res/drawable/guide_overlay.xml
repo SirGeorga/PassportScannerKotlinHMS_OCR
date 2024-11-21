@@ -4,5 +4,5 @@
     <corners android:radius="10dp"/> <!-- Закругленные углы -->
     <stroke
         android:width="1dp"
-        android:color="#ffffff"/> <!-- Белая рамка вокруг -->
+        android:color="#FFFFFF"/> <!-- Белая рамка вокруг -->
 </shape>

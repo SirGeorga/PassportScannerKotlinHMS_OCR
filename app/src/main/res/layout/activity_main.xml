@@ -259,7 +259,7 @@
                     android:id="@+id/guideBirthPlace"
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
-                    android:layout_weight="0.03"
+                    android:layout_weight="0.033"
                     android:background="@drawable/guide_overlay" />
 
                 <View
@@ -271,7 +271,7 @@
                     android:id="@+id/guideIssued"
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
-                    android:layout_weight="0.031"
+                    android:layout_weight="0.033"
                     android:background="@drawable/guide_overlay" />
 
                 <View
@@ -284,7 +284,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
                     android:layout_weight="0.033"
-                    android:layout_marginEnd="200dp"
+                    android:layout_marginEnd="180dp"
                     android:background="@drawable/guide_overlay" />
 
                 <View
@@ -390,12 +390,14 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_weight="0.1"
+                    android:hint="М"
                     android:text="Мужcкой"/>
                 <RadioButton
                     android:id="@+id/rbSexFemale"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_weight="0.1"
+                    android:hint="Ж"
                     android:text="Женский"/>
             </RadioGroup>
             </androidx.cardview.widget.CardView>

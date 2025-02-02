@@ -516,7 +516,7 @@ class MainActivity : AppCompatActivity() {
             "name" to binding.resultName.text.toString(),
             "patronymic" to binding.resultSurname.text.toString(),
             "birth_date" to binding.resultBirthDate.text.toString(),
-            "sex" to findViewById<RadioButton>(binding.rgSex.checkedRadioButtonId).text.toString(),
+            "sex" to findViewById<RadioButton>(binding.rgSex.checkedRadioButtonId).hint.toString(),
             "doc_type" to "УДЛ_Казахстан",
             "doc_series" to "",
             "doc_numb" to binding.resultIDNumber.text.toString(),

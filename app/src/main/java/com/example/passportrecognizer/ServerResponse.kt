@@ -7,6 +7,7 @@ data class ServerResponse (
 )
 
 data class Data(
+    val name: String,
     val surname: String,
     val patronymic: String,
     val birth_date: String,
@@ -18,4 +19,10 @@ data class Data(
     val doc_date: String,
     val issued_by: String,
     val olimp_id: String
+)
+
+data class ServerHistoryResponse (
+    val success: Boolean,
+    val message: String,
+    val data: Data?
 )

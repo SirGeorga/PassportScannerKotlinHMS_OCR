@@ -2,14 +2,16 @@ package com.example.passportrecognizer
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.example.passportrecognizer.databinding.ActivityHistoryBinding
-import com.example.passportrecognizer.databinding.ActivityMainBinding
 
 class HistoryActivity : AppCompatActivity() {
+
+    private val viewModel: HistoryViewModel by viewModels()
+
 
     private lateinit var binding: ActivityHistoryBinding
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -21,8 +23,13 @@ class HistoryActivity : AppCompatActivity() {
             insets
         }
 
+
         binding = ActivityHistoryBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        val recyclerView = binding.rvHistory
+        val adapter = HistoryAdapter()
+        recyclerView.adapter = adapter
 
         val bottomNavigationView = binding.bottomNavigationView
 
@@ -35,9 +42,19 @@ class HistoryActivity : AppCompatActivity() {
                     finish()
                     true
                 }
+
                 R.id.historyFragment -> true // Текущая Activity, ничего не делаем
                 else -> false
             }
         }
+
+        viewModel.data.observe(this)
+        { dataModels ->
+            // Обновляем RecyclerView
+            //adapter.setData(dataModels)
+            adapter.notifyDataSetChanged()
+        }
+
+        viewModel.fetchData()
     }
 }
